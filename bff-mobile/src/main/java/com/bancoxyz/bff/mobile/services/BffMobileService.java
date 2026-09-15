@@ -5,7 +5,9 @@ import com.bancoxyz.bff.mobile.dtos.CuentaMobileDTO;
 import com.bancoxyz.bff.mobile.dtos.MovimientoMobileDTO;
 import com.bancoxyz.bff.mobile.dtos.core.CuentaCoreDTO;
 import com.bancoxyz.bff.mobile.dtos.core.TransaccionCoreDTO;
+import com.bancoxyz.bff.mobile.exceptions.BackendCoreNoDisponibleException;
 import com.bancoxyz.bff.mobile.exceptions.CuentaNoEncontradaException;
+import feign.RetryableException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -46,8 +48,12 @@ public class BffMobileService {
 
         try {
             return backendCoreClient.obtenerCuenta(cuentaId);
-        } catch (Exception e) {
+        } catch (feign.FeignException.NotFound e) {
             throw new CuentaNoEncontradaException(cuentaId);
+        }catch (RetryableException e) {
+            throw new BackendCoreNoDisponibleException(
+                    "No fue posible comunicarse con el Backend Core"
+            );
         }
     }
 
