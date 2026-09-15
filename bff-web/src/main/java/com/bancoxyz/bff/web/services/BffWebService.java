@@ -7,7 +7,9 @@ import com.bancoxyz.bff.web.dtos.MovimientoWebDTO;
 import com.bancoxyz.bff.web.dtos.ResumenMovimientosDTO;
 import com.bancoxyz.bff.web.dtos.core.CuentaCoreDTO;
 import com.bancoxyz.bff.web.dtos.core.TransaccionCoreDTO;
+import com.bancoxyz.bff.web.exceptions.BackendCoreNoDisponibleException;
 import com.bancoxyz.bff.web.exceptions.CuentaNoEncontradaException;
+import feign.RetryableException;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -70,8 +72,12 @@ public class BffWebService {
 
         try {
             return backendCoreClient.obtenerCuenta(cuentaId);
-        } catch (Exception e) {
+        } catch (feign.FeignException.NotFound e) {
             throw new CuentaNoEncontradaException(cuentaId);
+        }catch (RetryableException e) {
+            throw new BackendCoreNoDisponibleException(
+                    "No fue posible comunicarse con el Backend Core"
+            );
         }
     }
 
