@@ -1,6 +1,8 @@
 package com.bancoxyz.core.services;
 
 import com.bancoxyz.core.dtos.CuentaDTO;
+import com.bancoxyz.core.exceptions.MontoInvalidoException;
+import com.bancoxyz.core.exceptions.SaldoInsuficienteException;
 import com.bancoxyz.core.model.Cuenta;
 import com.bancoxyz.core.exceptions.CuentaNoEncontradaException;
 import com.bancoxyz.core.model.Transaccion;
@@ -55,15 +57,13 @@ public class CuentaService {
                 );
 
         if (monto == null || monto.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException(
-                    "El monto del retiro debe ser mayor que cero"
+            throw new MontoInvalidoException(
+                    "El monto del retiro debe ser mayor a cero"
             );
         }
 
-        if (cuenta.getSaldo() == null ||
-                cuenta.getSaldo().compareTo(monto) < 0) {
-
-            throw new IllegalArgumentException(
+        if (cuenta.getSaldo().compareTo(monto) < 0) {
+            throw new SaldoInsuficienteException(
                     "Saldo insuficiente para realizar el retiro"
             );
         }
