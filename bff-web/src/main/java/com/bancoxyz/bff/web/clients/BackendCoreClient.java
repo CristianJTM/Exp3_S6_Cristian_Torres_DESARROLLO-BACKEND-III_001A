@@ -17,9 +17,6 @@ public interface BackendCoreClient {
     @GetMapping("/api/cuentas/{cuentaId}")
     CuentaCoreDTO obtenerCuenta(@PathVariable Long cuentaId);
 
-    @GetMapping("/api/transacciones/{id}")
-    TransaccionCoreDTO obtenerTransaccion(@PathVariable Long id);
-
     @GetMapping("/api/transacciones/cuenta/{cuentaId}")
     List<TransaccionCoreDTO> obtenerTransaccionesPorCuenta(
             @PathVariable Long cuentaId
