@@ -8,10 +8,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 import java.util.List;
 
-@FeignClient(
-        name = "backend-core",
-        url = "${backend-core.url}"
-)
+@FeignClient(name = "backend-core")
 public interface BackendCoreClient {
 
     @GetMapping("/api/cuentas/{cuentaId}")
