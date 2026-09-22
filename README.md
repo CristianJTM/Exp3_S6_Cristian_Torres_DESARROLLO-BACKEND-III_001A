@@ -1,704 +1,267 @@
-# Banco XYZ - Arquitectura Backend for Frontend (BFF)
+# Banco XYZ - Microservicios, Service Discovery, Configuración Centralizada, Resiliencia y Seguridad
 
 ## Descripción
 
-Este proyecto implementa una arquitectura basada en el patrón **Backend for Frontend (BFF)** para el sistema bancario simulado **Banco XYZ**.
+Este proyecto corresponde a la evolución de la arquitectura del sistema **Banco XYZ**, incorporando una arquitectura basada en microservicios y capacidades de **Spring Cloud**.
 
-El objetivo es disponer de diferentes interfaces backend especializadas según el canal utilizado por el cliente:
+Durante esta etapa se extendió la arquitectura BFF implementada anteriormente, incorporando:
 
-- **BFF Web:** orientado a clientes que utilizan un navegador web, entregando información completa de las cuentas, resumen de movimientos y movimientos registrados.
-- **BFF Mobile:** orientado a dispositivos móviles, entregando información esencial y los últimos movimientos para reducir el volumen de datos transferidos.
-- **BFF ATM:** orientado a cajeros automáticos, proporcionando operaciones críticas y esenciales como consulta de saldo y retiros.
+- Configuración centralizada mediante **Spring Cloud Config Server**.
+- Descubrimiento de servicios mediante **Netflix Eureka**.
+- Balanceo de carga mediante **Spring Cloud LoadBalancer**.
+- Comunicación entre servicios mediante **Spring Cloud OpenFeign**.
+- Tolerancia a fallos mediante **Resilience4j**.
+- Autenticación mediante **Spring Authorization Server**.
+- Emisión y validación de **tokens JWT** mediante OAuth2.
+- Protección de los tres BFF mediante Spring Security.
 
-Los BFF no acceden directamente a la base de datos. Las operaciones de negocio y el acceso a los datos son centralizados mediante **Backend Core**.
+La solución mantiene los tres canales de atención existentes:
 
-Además, el proyecto incorpora un proceso **Spring Batch** encargado de procesar información proveniente de archivos CSV y poblar la base de datos utilizada posteriormente por Backend Core.
+- BFF Web.
+- BFF Mobile.
+- BFF ATM.
 
-La solución utiliza BFF independientes por canal, permitiendo que cada uno pueda definir sus propios endpoints, DTOs, transformaciones, manejo de errores y optimizaciones según las necesidades del cliente.
+Además, se mantiene el **Backend Core** como servicio central de negocio y **Banco Batch** como componente encargado del procesamiento y carga de información hacia la base de datos.
 
 ---
 
-# Arquitectura
+# Arquitectura de la solución
+
+La arquitectura final implementada se compone de servicios de infraestructura, canales BFF, un servicio central de negocio y componentes de persistencia y procesamiento batch.
 
 ```text
-                        ┌─────────────────────┐
-                        │     Archivos CSV    │
-                        │   bank_legacy_data  │
-                        └──────────┬──────────┘
+                         ┌──────────────────────┐
+                         │    CONFIG SERVER     │
+                         │        :8888         │
+                         │                      │
+                         │ Configuración        │
+                         │ centralizada         │
+                         └──────────┬───────────┘
+                                    │
+                                    │
+                         ┌──────────▼───────────┐
+                         │   EUREKA DISCOVERY   │
+                         │        :8761         │
+                         │                      │
+                         │ Service Discovery    │
+                         └──────────┬───────────┘
+                                    │
+                    ┌───────────────┼───────────────┐
+                    │               │               │
+                    ▼               ▼               ▼
+              ┌──────────┐    ┌──────────┐    ┌──────────┐
+              │ BFF WEB  │    │BFF MOBILE│    │ BFF ATM  │
+              │  :8082   │    │  :8083   │    │  :8084   │
+              │          │    │          │    │          │
+              │Resilience│    │Resilience│    │Resilience│
+              │4j + JWT  │    │4j + JWT  │    │4j + JWT  │
+              └────┬─────┘    └────┬─────┘    └────┬─────┘
+                   │               │               │
+                   └───────────────┼───────────────┘
+                                   │
+                          OpenFeign + LoadBalancer
                                    │
                                    ▼
-                        ┌─────────────────────┐
-                        │    Spring Batch     │
-                        │       :8080         │
-                        └──────────┬──────────┘
-                                   │
-                                   ▼
-                        ┌─────────────────────┐
-                        │        MySQL        │
-                        │    banco_xyz        │
-                        │       :3307         │
-                        └──────────┬──────────┘
-                                   │
-                                   ▼
-                        ┌─────────────────────┐
-                        │    Backend Core     │
-                        │       :8081         │
-                        └──────────┬──────────┘
-                                   │
-                    ┌──────────────┼──────────────┐
-                    │              │              │
-                    ▼              ▼              ▼
-             ┌────────────┐ ┌────────────┐ ┌────────────┐
-             │  BFF Web   │ │ BFF Mobile │ │  BFF ATM   │
-             │    :8082   │ │    :8083   │ │    :8084   │
-             └─────┬──────┘ └─────┬──────┘ └─────┬──────┘
-                   │              │              │
-                   ▼              ▼              ▼
-               Cliente Web     Cliente Mobile   Cajero ATM
+                         ┌──────────────────┐
+                         │  BACKEND CORE    │
+                         │      :8081       │
+                         │                  │
+                         │ Lógica de negocio│
+                         └────────┬─────────┘
+                                  │
+                                  ▼
+                            ┌───────────┐
+                            │   MySQL   │
+                            │   :3307   │
+                            └───────────┘
+
+
+                  ┌──────────────────────────┐
+                  │       AUTH SERVER        │
+                  │          :9000           │
+                  │                          │
+                  │ Spring Authorization     │
+                  │ Server + OAuth2 + JWT    │
+                  └────────────┬─────────────┘
+                               │
+                               │ Emite JWT
+                               ▼
+                    ┌───────────────────────┐
+                    │ BFF WEB / MOBILE / ATM│
+                    └───────────────────────┘
+
+
+                  ┌──────────────────────────┐
+                  │       BANCO BATCH        │
+                  │        :8080             │
+                  │                          │
+                  │ Procesamiento batch      │
+                  │ y carga de información   │
+                  └────────────┬─────────────┘
+                               │
+                               │ Inserción / actualización
+                               ▼
+                            ┌───────┐
+                            │ MySQL │
+                            │ :3307 │
+                            └───────┘
 ```
 
-## Flujo de comunicación
+### Flujo general
 
-Los clientes se comunican exclusivamente con el BFF correspondiente.
+El funcionamiento de la solución se puede resumir de la siguiente manera:
 
-```text
-Cliente
-   │
-   ▼
-BFF específico
-   │
-   │ HTTP/REST + OpenFeign
-   ▼
-Backend Core
-   │
-   ▼
-MySQL
-```
-
-Los BFF no poseen acceso directo a la base de datos y tampoco contienen las reglas principales del negocio.
-
-La responsabilidad de cada componente se mantiene separada:
-
-- **Spring Batch:** procesamiento y carga de datos.
-- **Backend Core:** acceso a datos y reglas de negocio.
-- **BFF:** adaptación, transformación y agregación de información según el canal.
+1. **Banco Batch** procesa los archivos y datos correspondientes a los procesos batch y carga la información en MySQL.
+2. **Backend Core** accede a la información almacenada y expone los servicios de negocio.
+3. Los **BFF Web, Mobile y ATM** consumen Backend Core mediante OpenFeign.
+4. **Eureka Discovery** permite que los BFF encuentren dinámicamente a Backend Core sin depender de una URL fija.
+5. **Resilience4j** protege las comunicaciones entre los BFF y Backend Core.
+6. **Auth Server** autentica las solicitudes y emite tokens JWT.
+7. Los BFF validan el token antes de permitir el acceso a sus endpoints protegidos.
+8. **Config Server** centraliza la configuración de los servicios que utilizan configuración externa.
 
 ---
 
-# Integración y agregación de información
+# Componentes principales
 
-Los BFF integran información proveniente de distintos recursos/endpoints del **Backend Core** y la agregan mediante servicios propios, transformándola en respuestas específicas para cada canal.
+## Config Server - Puerto 8888
 
-Por ejemplo, el **BFF Web** obtiene información de la cuenta mediante:
+El **Config Server** centraliza configuraciones externas para los diferentes servicios de la arquitectura.
+
+Se implementó utilizando:
+
+- Spring Cloud Config Server.
+- Spring Boot.
+- Native configuration repository.
+
+Para esta implementación se utilizó un repositorio local de configuración:
 
 ```text
-GET /api/cuentas/{cuentaId}
+C:\config-repo
 ```
 
-y los movimientos mediante:
+Actualmente contiene configuraciones asociadas a los servicios.
+
+El servidor puede ser consultado mediante:
 
 ```text
-GET /api/transacciones/cuenta/{cuentaId}
+http://localhost:8888/bff-web/default
 ```
 
-Posteriormente, `BffWebService` combina esta información para construir una respuesta que contiene:
+Este endpoint permite verificar que el Config Server puede entregar la configuración correspondiente al servicio solicitado.
 
-- Identificador de cuenta.
-- Saldo.
-- Total de movimientos.
-- Total de depósitos.
-- Total de retiros.
-- Detalle de los movimientos.
-
-El **BFF Mobile** también integra información de la cuenta y sus transacciones, pero aplica una transformación diferente, entregando únicamente:
-
-- Identificador de cuenta.
-- Saldo.
-- Últimos cinco movimientos.
-
-El **BFF ATM**, por su parte, utiliza los recursos necesarios para sus operaciones críticas, principalmente consulta de cuenta y retiro.
-
-De esta manera, los BFF no simplemente exponen nuevamente los endpoints del Backend Core, sino que **coordinan, agregan y transforman información para construir contratos específicos para cada canal**.
+> La infraestructura del Config Server está implementada y validada. La integración automática de consumo desde los microservicios queda como una mejora pendiente si se requiere externalizar completamente la configuración de los BFF.
 
 ---
 
-# Estructura del proyecto
+# Discovery Server - Eureka
 
-Todos los componentes se encuentran dentro del mismo repositorio:
+El **Discovery Server** utiliza Netflix Eureka para permitir el registro y descubrimiento dinámico de los servicios.
 
-```text
-banco-xyz-bff/
-│
-├── docker-compose.yaml
-├── README.md
-├── Evidencias Semana 5.docx
-│
-├── banco-batch/
-│   ├── data/
-│   │   ├── semana_1/
-│   │   ├── semana_2/
-│   │   └── semana_3/
-│   ├── src/
-│   └── pom.xml
-│
-├── backend-core/
-│   ├── src/
-│   └── pom.xml
-│
-├── bff-web/
-│   ├── src/
-│   └── pom.xml
-│
-├── bff-mobile/
-│   ├── src/
-│   └── pom.xml
-│
-└── bff-atm/
-    ├── src/
-    └── pom.xml
-```
-
-Cada BFF posee su propia aplicación Spring Boot, configuración, controladores, clientes HTTP, DTOs, excepciones y servicios.
-
----
-
-# Organización interna de los componentes
-
-## Backend Core
+Puerto:
 
 ```text
-backend-core/
-└── src/main/java/com/bancoxyz/core/
-    ├── controllers/
-    ├── dtos/
-    ├── exceptions/
-    ├── model/
-    ├── repositories/
-    └── services/
+8761
 ```
 
-Backend Core mantiene separadas las responsabilidades relacionadas con:
-
-- Controladores REST.
-- DTOs.
-- Entidades.
-- Repositorios.
-- Servicios.
-- Manejo de excepciones.
-
----
-
-## Spring Batch
+Dashboard:
 
 ```text
-banco-batch/
-└── src/main/java/com/bancoxyz/batch/
-    ├── config/
-    ├── controller/
-    ├── exception/
-    ├── listener/
-    ├── model/
-    ├── processor/
-    ├── repository/
-    ├── service/
-    ├── tasklet/
-    └── writer/
+http://localhost:8761
 ```
 
-La estructura permite separar la configuración de los jobs, procesamiento, listeners, repositorios, servicios y writers.
-
----
-
-## BFF Web
+Los servicios registrados actualmente incluyen:
 
 ```text
-bff-web/
-└── src/main/java/com/bancoxyz/bff/web/
-    ├── clients/
-    ├── controllers/
-    ├── dtos/
-    │   └── core/
-    ├── exceptions/
-    └── services/
+BACKEND-CORE    :8081
+BFF-WEB         :8082
+BFF-MOBILE      :8083
+BFF-ATM         :8084
 ```
 
-El BFF Web utiliza DTOs propios para evitar exponer directamente los modelos del Backend Core.
-
----
-
-## BFF Mobile
+Esto permite que los BFF encuentren dinámicamente a Backend Core utilizando su nombre lógico:
 
 ```text
-bff-mobile/
-└── src/main/java/com/bancoxyz/bff/mobile/
-    ├── clients/
-    ├── controllers/
-    ├── dtos/
-    │   └── core/
-    ├── exceptions/
-    └── services/
+backend-core
 ```
 
-El BFF Mobile posee sus propios DTOs y lógica de transformación orientada a respuestas más livianas.
-
----
-
-## BFF ATM
-
-```text
-bff-atm/
-└── src/main/java/com/bancoxyz/bff/atm/
-    ├── clients/
-    ├── controllers/
-    ├── dtos/
-    │   └── core/
-    ├── exceptions/
-    └── services/
-```
-
-El BFF ATM incorpora además DTOs específicos para las solicitudes y respuestas de retiro.
-
----
-
-# Microservicios y puertos
-
-| Servicio | Puerto | Función |
-|---|---:|---|
-| Banco Batch | `8080` | Procesamiento y carga de datos |
-| Backend Core | `8081` | Lógica de negocio y acceso a datos |
-| BFF Web | `8082` | Backend especializado para clientes Web |
-| BFF Mobile | `8083` | Backend especializado para clientes Mobile |
-| BFF ATM | `8084` | Backend especializado para cajeros automáticos |
-| MySQL | `3307` | Persistencia de datos |
-
----
-
-# Tecnologías utilizadas
-
-- Java 21
-- Spring Boot
-- Spring Web
-- Spring Data JPA
-- Spring Batch
-- Spring Cloud OpenFeign
-- MySQL
-- Maven
-- Docker
-- Docker Compose
-- REST API
-
----
-
-# Requisitos previos
-
-Antes de ejecutar el proyecto se requiere tener instalado:
-
-- Java 21
-- Docker
-- Docker Compose
-- Maven (opcional, ya que cada proyecto incluye Maven Wrapper)
-
----
-
-# Puesta en marcha
-
-El orden de ejecución es importante debido a las dependencias entre los componentes.
-
-## 1. Levantar la base de datos
-
-Desde la raíz del proyecto ejecutar:
-
-```bash
-docker-compose up -d
-```
-
-Esto inicia el contenedor MySQL utilizado por la aplicación.
-
-La base de datos utilizada es:
-
-```text
-banco_xyz
-```
-
-El puerto utilizado desde el equipo local es:
-
-```text
-3307
-```
-
----
-
-# 2. Levantar Banco Batch
-
-Ingresar al directorio:
-
-```bash
-cd banco-batch
-```
-
-Ejecutar:
-
-```bash
-mvnw spring-boot:run
-```
-
-En Windows:
-
-```bash
-mvnw.cmd spring-boot:run
-```
-
-El servicio estará disponible en:
-
-```text
-http://localhost:8080
-```
-
-## Procesar los datos
-
-Una vez iniciado Banco Batch, se puede ejecutar el procesamiento completo mediante:
-
-```text
-GET http://localhost:8080/api/batch/procesar
-```
-
-También se encuentra disponible el procesamiento de estados anuales:
-
-```text
-GET http://localhost:8080/api/batch/estados-anuales
-```
-
-Los archivos CSV utilizados se encuentran en:
-
-```text
-banco-batch/data/
-```
-
-organizados por semana:
-
-```text
-data/
-├── semana_1/
-├── semana_2/
-└── semana_3/
-```
-
-El procesamiento permite preparar y almacenar la información necesaria para el funcionamiento posterior de Backend Core.
-
----
-
-# 3. Levantar Backend Core
-
-Ingresar al directorio:
-
-```bash
-cd backend-core
-```
-
-Ejecutar:
-
-```bash
-mvnw spring-boot:run
-```
-
-En Windows:
-
-```bash
-mvnw.cmd spring-boot:run
-```
-
-Backend Core estará disponible en:
+En lugar de depender de una dirección fija como:
 
 ```text
 http://localhost:8081
 ```
 
-**Backend Core debe estar ejecutándose para utilizar cualquiera de los BFF.**
-
 ---
 
-# 4. Levantar BFF Web
+# Backend Core
 
-Ingresar al directorio:
+**Puerto:** `8081`
 
-```bash
-cd bff-web
-```
+Backend Core concentra las principales operaciones de negocio relacionadas con cuentas y transacciones.
 
-Ejecutar:
+Es consumido por los tres BFF mediante **OpenFeign**.
 
-```bash
-mvnw spring-boot:run
-```
-
-En Windows:
-
-```bash
-mvnw.cmd spring-boot:run
-```
-
-Disponible en:
+La comunicación utiliza el nombre registrado en Eureka:
 
 ```text
-http://localhost:8082
+backend-core
 ```
 
----
-
-# 5. Levantar BFF Mobile
-
-Ingresar al directorio:
-
-```bash
-cd bff-mobile
-```
-
-Ejecutar:
-
-```bash
-mvnw spring-boot:run
-```
-
-En Windows:
-
-```bash
-mvnw.cmd spring-boot:run
-```
-
-Disponible en:
-
-```text
-http://localhost:8083
-```
-
----
-
-# 6. Levantar BFF ATM
-
-Ingresar al directorio:
-
-```bash
-cd bff-atm
-```
-
-Ejecutar:
-
-```bash
-mvnw spring-boot:run
-```
-
-En Windows:
-
-```bash
-mvnw.cmd spring-boot:run
-```
-
-Disponible en:
-
-```text
-http://localhost:8084
-```
-
----
-
-# Endpoints de Backend Core
-
-Backend Core concentra el acceso a la información y las principales reglas de negocio.
-
-## Consultar cuenta
-
-```http
-GET http://localhost:8081/api/cuentas/101
-```
-
-Este endpoint permite obtener la información de una cuenta.
-
----
-
-## Consultar transacciones de una cuenta
-
-```http
-GET http://localhost:8081/api/transacciones/cuenta/101
-```
-
-Este endpoint permite obtener las transacciones asociadas a una cuenta.
-
-La respuesta contiene información como:
-
-- Identificador.
-- Fecha.
-- Monto.
-- Tipo de transacción.
-- Cuenta asociada.
-
----
-
-## Realizar retiro
-
-```http
-POST http://localhost:8081/api/cuentas/101/retiros
-```
-
-Body:
-
-```json
-{
-    "monto": 2500
-}
-```
-
-Backend Core valida la operación, actualiza el saldo y registra la transacción correspondiente.
-
-Las validaciones principales incluyen:
-
-- Existencia de la cuenta.
-- Monto mayor que cero.
-- Saldo suficiente.
+Esto permite separar el descubrimiento del servicio de su dirección física.
 
 ---
 
 # BFF Web
 
-El BFF Web adapta la información de Backend Core para clientes web que requieren mayor cantidad de información.
+**Puerto:** `8082`
 
-## Detalle de cuenta
+El BFF Web proporciona información adaptada al canal web.
 
-```http
-GET http://localhost:8082/api/web/cuentas/101
-```
+Entre sus responsabilidades se encuentran:
 
-La respuesta contiene información agregada de la cuenta y sus movimientos.
-
-Incluye:
-
-- Identificador de cuenta.
-- Saldo.
-- Resumen de movimientos.
-- Total de depósitos.
-- Total de retiros.
-- Total de movimientos.
-- Detalle de movimientos.
-
-Para construir esta respuesta, el BFF Web consulta información de la cuenta y las transacciones mediante Backend Core y posteriormente las combina mediante `BffWebService`.
-
----
-
-## Resumen de cuenta
-
-```http
-GET http://localhost:8082/api/web/cuentas/101/resumen
-```
-
-Este endpoint entrega una respuesta resumida con los principales indicadores de la cuenta.
+- Consulta de información de cuentas.
+- Consulta de movimientos.
+- Transformación de DTOs.
+- Comunicación con Backend Core.
+- Manejo de errores.
+- Tolerancia a fallos mediante Resilience4j.
+- Validación de tokens JWT.
 
 ---
 
 # BFF Mobile
 
-El BFF Mobile está diseñado para entregar una respuesta más liviana y adecuada para dispositivos móviles.
+**Puerto:** `8083`
 
-## Consultar cuenta
+El BFF Mobile adapta la información de Backend Core para aplicaciones móviles.
 
-```http
-GET http://localhost:8083/api/mobile/cuentas/101
-```
+Entre sus responsabilidades se encuentran:
 
-La respuesta contiene:
-
-- Identificador de cuenta.
-- Saldo.
-- Últimos cinco movimientos.
-
-Los movimientos se ordenan desde el más reciente al más antiguo.
-
-El BFF consulta la información de la cuenta y sus transacciones desde Backend Core y posteriormente aplica las transformaciones necesarias para construir `CuentaMobileDTO`.
-
-Esta estrategia permite reducir el volumen de información entregado al dispositivo móvil.
+- Consulta de cuentas.
+- Consulta de transacciones.
+- Obtención de los últimos movimientos.
+- Transformación de información.
+- Manejo de errores.
+- Tolerancia a fallos mediante Resilience4j.
+- Validación de tokens JWT.
 
 ---
 
 # BFF ATM
 
-El BFF ATM está diseñado para operaciones simples, críticas y eficientes de un cajero automático.
+**Puerto:** `8084`
 
-Las operaciones implementadas son:
+El BFF ATM proporciona las operaciones necesarias para el canal de cajeros automáticos.
+
+Entre sus responsabilidades se encuentran:
 
 - Consulta de saldo.
-- Retiro de dinero.
-
-## Consulta de saldo
-
-```http
-GET http://localhost:8084/api/atm/cuentas/101
-```
-
-La respuesta contiene únicamente la información necesaria para la consulta:
-
-```json
-{
-    "cuentaId": 101,
-    "saldo": 0
-}
-```
-
-> El valor del saldo dependerá de los datos procesados y de las operaciones realizadas durante la ejecución.
-
----
-
-## Realizar retiro
-
-```http
-POST http://localhost:8084/api/atm/cuentas/101/retiros
-```
-
-Body:
-
-```json
-{
-    "monto": 2500
-}
-```
-
-La respuesta es específica para el canal ATM e incluye información como:
-
-```json
-{
-    "cuentaId": 101,
-    "montoRetirado": 2500,
-    "saldo": 0,
-    "estado": "APROBADO"
-}
-```
-
-> El saldo mostrado dependerá del estado actual de la cuenta.
-
-El flujo de la operación es:
-
-```text
-Cliente ATM
-     │
-     ▼
-BFF ATM
-     │
-     │ OpenFeign
-     ▼
-Backend Core
-     │
-     ▼
-Validación de negocio
-     │
-     ▼
-Actualización de cuenta
-     │
-     ▼
-Registro de transacción
-     │
-     ▼
-BFF ATM
-     │
-     ▼
-Respuesta adaptada
-```
+- Realización de retiros.
+- Validación de operaciones.
+- Transformación de respuestas.
+- Manejo de errores.
+- Tolerancia a fallos mediante Resilience4j.
+- Validación de tokens JWT.
 
 ---
 
@@ -706,315 +269,517 @@ Respuesta adaptada
 
 Los BFF utilizan **Spring Cloud OpenFeign** para comunicarse con Backend Core.
 
-Cada BFF posee su propio `BackendCoreClient`.
-
-Por ejemplo, el BFF Web y Mobile consumen recursos de cuenta y transacciones:
+La configuración utiliza el nombre lógico:
 
 ```text
-GET /api/cuentas/{cuentaId}
-GET /api/transacciones/cuenta/{cuentaId}
+backend-core
 ```
 
-Mientras que el BFF ATM utiliza los recursos necesarios para sus operaciones:
+Este nombre es resuelto mediante Eureka.
+
+La comunicación sigue el siguiente flujo:
 
 ```text
-GET /api/cuentas/{cuentaId}
-POST /api/cuentas/{cuentaId}/retiros
-```
-
-Esto permite que cada BFF mantenga su propia lógica de coordinación y transformación, sin acceder directamente a la base de datos.
-
----
-
-# Integración y transformación de respuestas
-
-Los BFF utilizan DTOs específicos para evitar exponer directamente los DTOs utilizados internamente por Backend Core.
-
-La estructura general es:
-
-```text
-Backend Core
-     │
-     │ CuentaCoreDTO
-     │ TransaccionCoreDTO
-     ▼
 BFF
-     │
-     │ Transformación
-     ▼
-DTO específico del canal
+ │
+ │ OpenFeign
+ ▼
+Eureka
+ │
+ │ descubre backend-core
+ ▼
+Backend Core
 ```
 
-Por ejemplo:
+De esta forma se elimina la dependencia de una URL fija para la comunicación entre servicios.
 
-```text
-CuentaCoreDTO
-      +
-TransaccionCoreDTO
-      │
-      ▼
-BffWebService
-      │
-      ▼
-CuentaWebDetalleDTO
-```
-
-Para Mobile:
-
-```text
-CuentaCoreDTO
-      +
-TransaccionCoreDTO
-      │
-      ▼
-BffMobileService
-      │
-      ├── ordenar
-      ├── limitar a 5
-      └── transformar
-      ▼
-CuentaMobileDTO
-```
-
-Para ATM:
-
-```text
-CuentaCoreDTO
-      │
-      ▼
-BffAtmService
-      │
-      ▼
-CuentaAtmDTO
-```
-
-En el caso de los retiros, el BFF ATM además transforma la respuesta de Backend Core en:
-
-```text
-RetiroAtmResponseDTO
-```
+Además, Spring Cloud LoadBalancer permite seleccionar una instancia disponible del servicio registrado.
 
 ---
 
-# Manejo de errores
+# Tolerancia a fallos con Resilience4j
 
-Los BFF implementan manejo de errores para evitar exponer directamente errores internos de Backend Core al cliente.
+Los tres BFF incorporan **Resilience4j** para mejorar la tolerancia a fallos durante la comunicación con Backend Core.
 
-## Cuenta no encontrada
+Se implementaron:
 
-Cuando se consulta una cuenta inexistente, el BFF transforma el error en una respuesta:
+- Circuit Breaker.
+- Retry.
+- Backoff exponencial.
+- Fallback.
+- Timeouts para las llamadas Feign.
 
-```text
-HTTP 404
-```
+La configuración utiliza una ventana de evaluación para el Circuit Breaker y permite realizar hasta tres intentos antes de considerar que la comunicación está fallando.
 
-con información indicando que la cuenta no fue encontrada.
-
----
-
-## Monto inválido
-
-En las operaciones de retiro, un monto igual o menor que cero genera:
+El flujo ante una indisponibilidad de Backend Core es:
 
 ```text
-HTTP 400
-```
-
-con el error:
-
-```text
-Monto inválido
-```
-
----
-
-## Saldo insuficiente
-
-Si el monto solicitado supera el saldo disponible:
-
-```text
-HTTP 400
-```
-
-con el error:
-
-```text
-Saldo insuficiente
-```
-
----
-
-## Backend Core no disponible
-
-Los BFF también controlan los problemas de comunicación con Backend Core.
-
-Cuando no es posible comunicarse con el servicio dependiente, se entrega:
-
-```text
+BFF
+ │
+ │ solicitud
+ ▼
+Backend Core
+ │
+ X servicio no disponible
+ │
+ ▼
+Retry
+ │
+ X continúa fallando
+ │
+ ▼
+Circuit Breaker
+ │
+ ▼
+Fallback
+ │
+ ▼
 HTTP 503
 ```
 
-con información similar a:
+Cuando Backend Core no está disponible, los BFF responden con un error `503 Service Unavailable` y un mensaje indicando que el servicio central no se encuentra disponible.
 
-```json
-{
-    "status": 503,
-    "error": "Backend Core no disponible",
-    "message": "No fue posible comunicarse con el Backend Core"
-}
-```
+Esta implementación se encuentra presente en:
 
-De esta forma, el cliente puede distinguir entre un problema de negocio y un problema de disponibilidad del servicio.
+- BFF Web.
+- BFF Mobile.
+- BFF ATM.
 
 ---
 
-# Configuración de tiempos de espera
+# Autenticación con OAuth2 y JWT
 
-Los BFF utilizan configuración de timeout para controlar el tiempo de espera de las llamadas realizadas mediante OpenFeign.
+La solución incorpora un **Auth Server** utilizando Spring Authorization Server.
 
-La configuración utilizada es:
-
-```properties
-spring.cloud.openfeign.client.config.backend-core.connectTimeout=2000
-spring.cloud.openfeign.client.config.backend-core.readTimeout=5000
-```
-
-Además, cada BFF utiliza la URL configurada para Backend Core:
-
-```properties
-backend-core.url=http://localhost:8081
-```
-
-Los tiempos de espera permiten evitar esperas indefinidas cuando Backend Core no responde y contribuyen a controlar el consumo de conexiones y recursos.
-
----
-
-# Persistencia
-
-La aplicación utiliza MySQL mediante Docker Compose.
-
-Las principales entidades utilizadas por Backend Core son:
+**Puerto:**
 
 ```text
-cuentas
-transacciones
+9000
 ```
 
-Spring Batch es responsable de procesar los archivos CSV y generar la información utilizada posteriormente por Backend Core.
+El servidor es responsable de emitir tokens de acceso JWT para los clientes autorizados.
 
-Los BFF no tienen acceso directo a estas tablas.
-
----
-
-# Consideraciones sobre los datos
-
-Los datos utilizados corresponden a información bancaria simulada proveniente de archivos CSV.
-
-Para las funcionalidades utilizadas por los BFF se consideran principalmente las relaciones entre:
+La arquitectura de autenticación es:
 
 ```text
-cuentas
-    │
-    └── transacciones
+Cliente / Postman
+       │
+       │ client_credentials
+       ▼
+┌─────────────────┐
+│   Auth Server   │
+│      :9000      │
+└────────┬────────┘
+         │
+         │ JWT
+         ▼
+┌────────────────────────────┐
+│ BFF Web / Mobile / ATM     │
+│                            │
+│ Spring Security            │
+│ JWT Resource Server        │
+└────────────┬───────────────┘
+             │
+             │ OpenFeign
+             ▼
+       Backend Core
 ```
 
-El archivo `cuentas_anuales.csv` contiene `cuenta_id` asociado a los movimientos, por lo que permite relacionar la información utilizada para las funcionalidades de cuentas y transacciones.
-
-El archivo `transacciones.csv` corresponde a un flujo independiente utilizado por el procesamiento Batch y no contiene `cuenta_id`, por lo que no se utiliza para relacionar directamente los movimientos mostrados por los BFF.
-
-El archivo `intereses.csv` presenta inconsistencias en la relación entre cuentas y nombres, por lo que los intereses procesados no forman parte de las funcionalidades implementadas por los BFF.
-
-Además, los archivos de datos no proporcionan un saldo bancario inicial explícito. Para esta implementación, el saldo utilizado en `cuentas.saldo` corresponde al movimiento neto calculado durante el procesamiento Batch, permitiendo simular las operaciones de consulta y retiro requeridas.
-
----
-
-# Arquitectura BFF implementada
-
-La solución utiliza BFF independientes y especializados para cada canal.
-
-| Característica | Web | Mobile | ATM |
-|---|:---:|:---:|:---:|
-| Consulta de saldo | ✓ | ✓ | ✓ |
-| Resumen de movimientos | ✓ | - | - |
-| Movimientos completos | ✓ | - | - |
-| Últimos movimientos | - | ✓ | - |
-| Retiro | - | - | ✓ |
-| Respuesta específica por canal | ✓ | ✓ | ✓ |
-| Transformación mediante DTO propio | ✓ | ✓ | ✓ |
-| Integración con Backend Core | ✓ | ✓ | ✓ |
-| Acceso directo a BD | ✗ | ✗ | ✗ |
-
----
-
-# Organización y escalabilidad
-
-Cada BFF mantiene su propia estructura de:
+El cliente OAuth2 utilizado para las pruebas locales dispone de los scopes:
 
 ```text
-clients
-controllers
-dtos
-exceptions
-services
+cuentas.read
+cuentas.write
 ```
 
-Esta organización permite separar:
-
-- Exposición de endpoints.
-- Comunicación con Backend Core.
-- Modelos de respuesta.
-- Manejo de errores.
-- Lógica de coordinación y transformación.
-
-Al tratarse de BFF independientes, cada canal puede evolucionar, modificar sus respuestas y aplicar optimizaciones sin afectar directamente a los otros canales.
-
-Los componentes técnicos de cada BFF también mantienen responsabilidades separadas, evitando acoplar la lógica de un canal con otro.
-
----
-
-# Seguridad
-
-La implementación actual está enfocada en la construcción y validación funcional del patrón **Backend for Frontend**.
-
-Como mejora futura se contempla incorporar:
-
-- Autenticación.
-- Autorización basada en roles y permisos.
-- Tokens de acceso.
-- Seguridad específica para cada canal.
-- Protección adicional de las operaciones críticas del BFF ATM.
-
-Estas funcionalidades pueden incorporarse posteriormente mediante Spring Security y mecanismos de autenticación basados en tokens.
-
----
-
-# Resultado
-
-La solución implementa tres BFF independientes, especializados según las necesidades de cada canal:
+El flujo utilizado para obtener un token corresponde a:
 
 ```text
-                         Backend Core
-                              │
-               ┌──────────────┼──────────────┐
-               │              │              │
-               ▼              ▼              ▼
-            BFF Web       BFF Mobile       BFF ATM
-               │              │              │
-               ▼              ▼              ▼
-           Cliente Web    Cliente Mobile   Cajero ATM
+client_credentials
 ```
 
-Cada BFF integra información desde Backend Core, la transforma mediante servicios y DTOs propios y entrega una respuesta adaptada al canal correspondiente.
+El token emitido por Auth Server se utiliza posteriormente como:
 
-El resultado permite aplicar el patrón **Backend for Frontend** manteniendo:
+```text
+Authorization: Bearer <token>
+```
 
-- Independencia entre canales.
-- Separación de responsabilidades.
-- Integración y agregación de información.
-- Respuestas específicas por cliente.
-- Optimización de datos transferidos.
-- Manejo de errores.
-- Control de tiempos de espera.
-- Organización modular y escalable.
+Los BFF se encuentran protegidos mediante Spring Security y validan los tokens JWT emitidos por el Auth Server.
 
-De esta manera, Web, Mobile y ATM no necesitan consumir directamente la estructura interna de Backend Core, sino que disponen de interfaces backend especializadas de acuerdo con sus necesidades.
+### Comportamiento de seguridad
+
+Sin token:
+
+```text
+HTTP 401 Unauthorized
+```
+
+Con un token inválido:
+
+```text
+HTTP 401 Unauthorized
+```
+
+Con un token válido:
+
+```text
+HTTP 200 OK
+```
+
+permitiendo acceder al endpoint protegido correspondiente.
+
+Los tokens generados durante las pruebas no se almacenan en el repositorio ni se incluyen en este README.
+
+---
+
+# Banco Batch
+
+El componente **Banco Batch** corresponde al procesamiento de información proveniente de los procesos batch del sistema.
+
+Su responsabilidad principal es procesar y cargar información en la base de datos MySQL.
+
+Los procesos batch existentes trabajan con información relacionada con:
+
+- Transacciones.
+- Intereses.
+- Estados de cuenta.
+- Resúmenes y procesamiento de información bancaria.
+
+El flujo de datos es:
+
+```text
+Archivos / Datos de entrada
+          │
+          ▼
+     Banco Batch
+          │
+          │ procesamiento
+          ▼
+        MySQL
+          │
+          ▼
+    Backend Core
+          │
+          ▼
+ BFF Web / Mobile / ATM
+```
+
+Banco Batch se mantiene como un componente independiente de la arquitectura de microservicios implementada durante esta etapa.
+
+Su función es principalmente la preparación y actualización de información que posteriormente puede ser consultada por Backend Core.
+
+---
+
+# Base de datos MySQL
+
+La solución utiliza **MySQL** como sistema de persistencia.
+
+Configuración utilizada:
+
+```text
+Host: localhost
+Puerto: 3307
+Base de datos: banco_xyz
+```
+
+MySQL se ejecuta mediante Docker.
+
+La base de datos es utilizada principalmente por Backend Core y recibe información procesada por Banco Batch.
+
+---
+
+# Estructura del proyecto
+
+La estructura principal del proyecto se organiza de la siguiente manera:
+
+```text
+BancoXYZ
+│
+├── auth-server
+│   └── Spring Authorization Server
+│
+├── config-server
+│   └── Spring Cloud Config Server
+│
+├── discovery-server
+│   └── Eureka Server
+│
+├── backend-core
+│   └── Servicio central de negocio
+│
+├── bff-web
+│   └── Canal Web
+│
+├── bff-mobile
+│   └── Canal Mobile
+│
+├── bff-atm
+│   └── Canal ATM
+│
+├── banco-batch
+│   └── Procesamiento y carga batch
+│
+├── docker-compose.yaml
+│
+├── README.md
+│
+└── Evidencias Semana 6.docx
+```
+
+Los BFF incorporan las siguientes capas relacionadas con la nueva arquitectura:
+
+```text
+bff-web
+├── clients
+│   └── BackendCoreClient.java
+├── config
+│   └── SecurityConfig.java
+├── exceptions
+└── services
+    ├── BffWebService.java
+    └── BackendCoreResilientService.java
+```
+
+La misma estructura conceptual se utiliza en BFF Mobile y BFF ATM.
+
+---
+
+# Puertos de los servicios
+
+| Componente | Puerto | Función |
+|---|---:|---|
+| Banco Batch | 8080 | Procesamiento y carga batch |
+| Backend Core | 8081 | Lógica central de negocio |
+| BFF Web | 8082 | Canal web |
+| BFF Mobile | 8083 | Canal móvil |
+| BFF ATM | 8084 | Canal ATM |
+| Auth Server | 9000 | OAuth2 / JWT |
+| Discovery Server | 8761 | Service Discovery |
+| Config Server | 8888 | Configuración centralizada |
+| MySQL | 3307 | Persistencia |
+
+---
+
+# Tecnologías utilizadas
+
+### Backend
+
+- Java 21.
+- Spring Boot 4.1.1.
+- Spring Web.
+- Spring Data JPA.
+- Spring Security.
+
+### Spring Cloud
+
+- Spring Cloud Config Server.
+- Spring Cloud Netflix Eureka.
+- Spring Cloud OpenFeign.
+- Spring Cloud LoadBalancer.
+- Spring Cloud CircuitBreaker.
+- Resilience4j.
+
+### Seguridad
+
+- Spring Authorization Server.
+- OAuth2.
+- JWT.
+- Spring Security.
+
+### Persistencia
+
+- MySQL.
+- Docker.
+
+### Procesamiento
+
+- Spring Batch.
+
+### Herramientas
+
+- IntelliJ IDEA.
+- Maven.
+- Docker.
+- Postman.
+- Git / GitHub.
+
+---
+
+# Versiones principales
+
+```text
+Java                 21
+Spring Boot          4.1.1
+Spring Cloud         2025.1.3
+Spring Batch         6.x
+MySQL                8.x
+```
+
+---
+
+# Ejecución de la solución
+
+Para ejecutar la arquitectura completa se recomienda iniciar primero los componentes de infraestructura.
+
+### 1. MySQL
+
+Iniciar el contenedor Docker correspondiente a MySQL.
+
+### 2. Config Server
+
+Iniciar:
+
+```text
+config-server
+```
+
+Puerto:
+
+```text
+8888
+```
+
+### 3. Discovery Server
+
+Iniciar:
+
+```text
+discovery-server
+```
+
+Puerto:
+
+```text
+8761
+```
+
+Luego se puede verificar el dashboard:
+
+```text
+http://localhost:8761
+```
+
+### 4. Backend Core
+
+Iniciar:
+
+```text
+backend-core
+```
+
+Puerto:
+
+```text
+8081
+```
+
+El servicio debe registrarse en Eureka.
+
+### 5. BFFs
+
+Iniciar:
+
+```text
+bff-web
+bff-mobile
+bff-atm
+```
+
+Puertos:
+
+```text
+8082
+8083
+8084
+```
+
+Los tres BFF deben registrarse automáticamente en Eureka.
+
+### 6. Auth Server
+
+Iniciar:
+
+```text
+auth-server
+```
+
+Puerto:
+
+```text
+9000
+```
+
+El servidor permitirá solicitar tokens OAuth2 mediante el flujo configurado.
+
+### 7. Banco Batch
+
+Banco Batch puede ejecutarse para realizar los procesos de carga y actualización de información en MySQL.
+
+---
+
+# Nuevas funcionalidades implementadas en esta etapa
+
+La arquitectura incorpora las siguientes capacidades:
+
+### Service Discovery
+
+Los servicios se registran en Eureka y pueden localizarse mediante nombres lógicos.
+
+### Configuración centralizada
+
+Se implementó un servidor Spring Cloud Config para centralizar configuraciones externas.
+
+### Tolerancia a fallos
+
+Los tres BFF incorporan Resilience4j con Retry, Circuit Breaker y fallback.
+
+### Autenticación
+
+Auth Server permite generar tokens JWT utilizando OAuth2.
+
+### Protección de microservicios
+
+Los tres BFF requieren autenticación mediante Bearer Token.
+
+### Balanceo de carga
+
+Las llamadas mediante Feign utilizan Spring Cloud LoadBalancer junto con Eureka.
+
+---
+
+# Funcionalidades pendientes y mejoras futuras
+
+Como trabajo posterior se consideran las siguientes mejoras:
+
+- Completar la integración de **Config Client** en los microservicios que todavía mantienen configuración local.
+- Implementar autorización granular utilizando los scopes `cuentas.read` y `cuentas.write` directamente sobre los endpoints.
+- Persistir clientes OAuth2 y claves del Auth Server en una solución permanente en lugar de memoria.
+- Implementar propagación del token JWT en las comunicaciones internas cuando corresponda.
+- Utilizar un sistema seguro para la administración de secretos.
+- Incorporar HTTPS para ambientes productivos.
+- Externalizar completamente las configuraciones de todos los microservicios.
+- Integrar todos los servicios dentro de Docker Compose para simplificar su despliegue.
+
+Estas mejoras permitirían acercar la solución a un escenario productivo.
+
+---
+
+# Resultado de la implementación
+
+La arquitectura evolucionó desde una solución basada principalmente en BFF hacia una arquitectura distribuida con capacidades de Spring Cloud y seguridad.
+
+Actualmente se cuenta con:
+
+- **3 BFF registrados en Eureka:** Web, Mobile y ATM.
+- **Backend Core registrado como servicio descubrible.**
+- Comunicación BFF → Backend Core mediante **OpenFeign + Eureka + LoadBalancer**.
+- **Resilience4j implementado en los tres BFF.**
+- Manejo de indisponibilidad de Backend Core mediante respuestas `503`.
+- **Auth Server funcional** mediante Spring Authorization Server.
+- Emisión de **tokens JWT mediante OAuth2**.
+- Protección de los tres BFF mediante Spring Security.
+- Rechazo de solicitudes sin autenticación o con tokens inválidos mediante `401 Unauthorized`.
+- **Config Server implementado y validado**.
+- Banco Batch manteniendo su función de procesamiento y carga de información en MySQL.
+
+Esta implementación permite disponer de una arquitectura más desacoplada, tolerante a fallos, descubrible y protegida, manteniendo la separación por canales proporcionada por los BFF.
