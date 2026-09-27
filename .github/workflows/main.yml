@@ -22,14 +22,14 @@ jobs:
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
     
-      # 3. Copiar docker-compose.kafka.yml a la instancia EC2
+      # 3. Copiar docker-compose.kafka.yaml a la instancia EC2
       - name: Copy Kafka Compose to EC2
         run: |
           scp \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
-            docker-compose.kafka.yml \
-            ${{ secrets.USER_SERVER }}@${{ secrets.EC2_HOST }}:~/banco-xyz-kafka/docker-compose.kafka.yml
+            docker-compose.kafka.yaml \
+            ${{ secrets.USER_SERVER }}@${{ secrets.EC2_HOST }}:~/banco-xyz-kafka/docker-compose.kafka.yaml
     
       # 4. Desplegar Kafka en Amazon Linux 2023
       - name: Deploy Kafka infrastructure
@@ -45,18 +45,18 @@ jobs:
             echo "KAFKA_ADVERTISED_HOST=${{ secrets.EC2_HOST }}" > .env
     
             # Validar el Docker Compose
-            docker-compose -f docker-compose.kafka.yml config
+            docker-compose -f docker-compose.kafka.yaml config
     
             # Detener la versión anterior
-            docker-compose -f docker-compose.kafka.yml down
+            docker-compose -f docker-compose.kafka.yaml down
     
             # Descargar las imágenes actualizadas
-            docker-compose -f docker-compose.kafka.yml pull
+            docker-compose -f docker-compose.kafka.yaml pull
     
             # Levantar la infraestructura Kafka
-            docker-compose -f docker-compose.kafka.yml up -d
+            docker-compose -f docker-compose.kafka.yaml up -d
     
             # Mostrar estado de los contenedores
-            docker-compose -f docker-compose.kafka.yml ps
+            docker-compose -f docker-compose.kafka.yaml ps
     
           EOF
