@@ -8,12 +8,15 @@ import com.bancoxyz.core.exceptions.CuentaNoEncontradaException;
 import com.bancoxyz.core.model.Transaccion;
 import com.bancoxyz.core.repositories.CuentaRepository;
 import com.bancoxyz.core.repositories.TransaccionRepository;
+import com.bancoxyz.core.kafka.TransaccionEvento;
+import com.bancoxyz.core.kafka.TransaccionProducer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import org.springframework.transaction.annotation.Transactional;
+import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
@@ -21,6 +24,7 @@ public class CuentaService {
 
     private final CuentaRepository cuentaRepository;
     private final TransaccionRepository transaccionRepository;
+    private final TransaccionProducer transaccionProducer;
 
     public CuentaDTO buscarPorId(Long cuentaId) {
 
@@ -89,6 +93,16 @@ public class CuentaService {
         transaccion.setTipo("retiro");
 
         transaccionRepository.save(transaccion);
+
+        TransaccionEvento evento = new TransaccionEvento(
+                "RETIRO_REALIZADO",
+                cuentaId,
+                monto,
+                LocalDateTime.now(),
+                cuenta.getSaldo()
+        );
+
+        transaccionProducer.publicarRetiro(evento);
 
         return convertirADTO(cuenta);
     }
