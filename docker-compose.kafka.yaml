@@ -294,9 +294,12 @@ services:
       - kafka-net
 
     depends_on:
-      - kafka-1
-      - kafka-2
-      - kafka-3
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
 
     ports:
       - "8090:8080"
@@ -305,3 +308,44 @@ services:
       KAFKA_CLUSTERS_0_NAME: kafka-aws
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
       DYNAMIC_CONFIG_ENABLED: "true"
+
+
+  # ============================================================
+  # KAFKA TOPIC INITIALIZATION
+  # ============================================================
+  kafka-init:
+    image: confluentinc/cp-kafka:7.4.4
+    container_name: kafka-init
+    networks:
+      - kafka-net
+
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+
+    entrypoint: ["/bin/bash", "-c"]
+
+    command:
+      - |
+        echo "Esperando a que Kafka esté disponible..."
+
+        kafka-topics \
+          --bootstrap-server kafka-1:9092 \
+          --create \
+          --if-not-exists \
+          --topic transacciones-bancarias \
+          --partitions 3 \
+          --replication-factor 3
+
+        echo "Topic transacciones-bancarias creado/verificado."
+
+        kafka-topics \
+          --bootstrap-server kafka-1:9092 \
+          --describe \
+          --topic transacciones-bancarias
+
+        echo "Inicialización de Kafka completada."
